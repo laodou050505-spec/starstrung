@@ -1,0 +1,33 @@
+{
+  "fillUvMissing": 0,
+  "vcolorFix": {
+    "faces": 42252,
+    "flagged": 4270,
+    "flaggedAreaPct": 31.66,
+    "uvAnomaly": 4159,
+    "patches": 284,
+    "invisibleMild": 111
+  },
+  "closedCheck": {
+    "boundaryEdges": 0,
+    "nonmanifoldEdges": 45,
+    "finFaces": 30
+  },
+  "holesFilled": 156,
+  "lod0.fbx": {
+    "triangles": 42252,
+    "removedFragmentFaces": 2
+  },
+  "lod1.fbx": {
+    "triangles": 14788,
+    "removedFragmentFaces": 2
+  },
+  "lod2.fbx": {
+    "triangles": 4100,
+    "removedFragmentFaces": 2
+  },
+  "lod3.fbx": {
+    "triangles": 1230,
+    "removedFragmentFaces": 2
+  }
+}

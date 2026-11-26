@@ -1,0 +1,59 @@
+# Unity 生成 / 缓存（可由 Unity 重新生成）
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/Assets/_Recovery/
+/Assets/_Recovery.meta
+
+# PICO Unity Integration SDK 6.0.0：许可证不允许公开分发，不入库；按 README 第 1 节放到工程上一级的 PICO-SDK/XR
+/PICO-SDK/
+
+# 打包产物（安装包以后放 GitHub Release，不进仓库）
+/[Bb]uild/
+/[Bb]uilds/
+*.apk
+*.aab
+
+# 签名（不入库，找负责人要或自己生成同名文件）
+/Keystore/
+*.keystore
+*.jks
+
+# 美术原始素材：只收录重新生成需要的
+#   Fonts        原始开源字体（Tools/subset_fonts.py 从这里切子集，附 OFL 许可证）
+#   ModelsP2/StarEater/model.glb  吞星兽 Tripo 原始模型（要重新烘焙 / 换贴图时用）
+#   specs.json   P2 流水线配置
+/ArtSource/*
+!/ArtSource/Fonts/
+!/ArtSource/ModelsP2/
+!/ArtSource/specs.json
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 测试时临时录的手部动作
+/Docs/手部录制/
+
+# IDE / 系统
+.vs/
+.vscode/
+.idea/
+*.csproj
+*.sln
+*.suo
+*.user
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+.DS_Store
+sysinfo.txt
+crashlytics-build.properties
