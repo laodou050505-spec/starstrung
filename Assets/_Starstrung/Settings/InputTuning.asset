@@ -12,21 +12,24 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 95e671bb9bb554b6dafd68e36ec888b2, type: 3}
   m_Name: InputTuning
   m_EditorClassIdentifier: Assembly-CSharp::Starstrung.InputTuning
-  pinchOn: 0.04
-  pinchOff: 0.055
-  otherFingerOpen: 1.3
-  staleAfter: 3
-  lostGrace: 0.15
-  frozenAfter: 0.3
-  freezeAfter: 0.2
+  pinchOn: 0.028
+  pinchOff: 0.042
+  otherFingerOpen: 1.02
+  staleAfter: 12
+  lostGrace: 0.18
+  frozenAfter: 0.35
+  freezeAfter: 0.25
   raiseHint: 2.5
   shoulderSide: 0.17
   shoulderDown: 0.2
-  nearRadius: 0.06
-  pullOut: 0.05
-  coneDeg: 5
-  hysteresisDeg: 1.5
-  lookback: 0.1
-  gazeDeg: 4
+  lowHandLiftDeg: 10
+  liftFrom: 0.18
+  liftFull: 0.48
+  nearRadius: 0.065
+  pullOut: 0.018
+  coneDeg: 6.5
+  hysteresisDeg: 1.8
+  lookback: 0.2
+  gazeDeg: 4.5
   gazeSmoothing: 0.035
   eyeRetry: 2

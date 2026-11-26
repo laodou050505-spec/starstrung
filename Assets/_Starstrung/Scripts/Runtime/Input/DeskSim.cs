@@ -47,8 +47,35 @@ namespace Starstrung
         }
         public void ReleaseScript() => scripted = false;
 
+        /// <summary>判断是否处于真实 XR 头显或非编辑器构建中（此时严禁运行桌面模拟，避免锁死头显相机位姿）。</summary>
+        static bool ShouldDisableForXR => !Application.isEditor || UnityEngine.XR.XRSettings.isDeviceActive;
+
+        void Awake()
+        {
+            if (ShouldDisableForXR)
+            {
+                active = false;
+                enabled = false;
+            }
+        }
+
+        void OnEnable()
+        {
+            if (ShouldDisableForXR)
+            {
+                active = false;
+                enabled = false;
+            }
+        }
+
         void Update()
         {
+            if (ShouldDisableForXR)
+            {
+                active = false;
+                enabled = false;
+                return;
+            }
             if (!active || !cam) return;
             var kb = Keyboard.current; var ms = Mouse.current;
             float dt = Time.deltaTime;

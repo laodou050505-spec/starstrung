@@ -29,6 +29,7 @@ namespace Starstrung
         public bool InXR => XRSettings.isDeviceActive;
 
         float calibrateIn = -1f;
+        bool lastFloorSet;
         /// <summary>暂停：不推进逻辑（手还照常读，这样恢复时不会突然跳一下）</summary>
         [System.NonSerialized] public bool paused;
         /// <summary>顿帧（hit-stop）：连锁消除的那一下让整串星停住几十毫秒，“咔嗒”一下的打击感</summary>
@@ -61,6 +62,7 @@ namespace Starstrung
 
         public void StartLevel(string id)
         {
+            ApplyTuning();
             var L = Levels.LevelById(id) ?? Levels.LEVELS[0];
             levelId = L.Id;
             Game = new Game(L);
@@ -143,6 +145,12 @@ namespace Starstrung
         void Update()
         {
             StepRecenter(Time.unscaledDeltaTime);
+            // 追踪原点刚切到 Floor 时再对准一次，防止首帧仍在 Device 原点导致星界高度偏低
+            if (InXR && MRRig.FloorSet && !lastFloorSet)
+            {
+                lastFloorSet = true;
+                if (calibrateIn < 0f) calibrateIn = 0.15f;
+            }
             if (calibrateIn > 0 && Game == null && (calibrateIn -= Time.deltaTime) <= 0) Calibrate();
             if (Game == null) return;
             if (calibrateIn > 0 && (calibrateIn -= Time.deltaTime) <= 0) Calibrate();

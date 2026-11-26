@@ -36,13 +36,32 @@ namespace Starstrung
     public class MenuPicker : MonoBehaviour
     {
         public GameRunner runner;
-        public float coneDeg = 4.5f, hysteresisDeg = 1.5f, lookback = 0.12f;
+        public float coneDeg = 7.5f, hysteresisDeg = 2.5f, lookback = 0.20f;
         public bool active = true;
         public event Action<PickTarget> Picked;
 
-        class HandTrack { public bool wasPinch; public PickTarget cur; public PickTarget recent; public float recentT; public PickTarget holding; public Transform reticle; public LineRenderer[] lines; public float a; }
+        class HandTrack { public bool wasPinch; public PickTarget cur; public float curSince; public PickTarget recent; public float recentT; public PickTarget holding; public Transform reticle; public LineRenderer[] lines; public float a; }
         readonly HandTrack[] hands = { new(), new() };
         static readonly Color Ink = new(0.86f, 0.92f, 1f, 1f);
+
+        /// <summary>当前指定手正瞄准或按住的界面目标（供手部星光指引线吸附端点使用）。</summary>
+        public PickTarget CurrentTarget(int side)
+        {
+            if (side < 0 || side > 1) return null;
+            var h = hands[side];
+            return h.holding ? h.holding : h.cur;
+        }
+
+        void Awake()
+        {
+            // 自动挂载手部星光指引（指尖微光点 + 极细星光射线），无需重建场景即可在头显上清晰反馈手的位置与指向
+            if (!GetComponent<HandPointerView>())
+            {
+                var pv = gameObject.AddComponent<HandPointerView>();
+                pv.runner = runner;
+                pv.menuPicker = this;
+            }
+        }
 
         // 星盘准星：被指着的东西外面一个手绘细圆 + 四道斜刻度（方案 7.1），慢慢转；两只手各一个
         void MakeReticle(HandTrack h, int side)
@@ -115,27 +134,68 @@ namespace Starstrung
                 return;
             }
 
+            // 1) 近距离直接用手摸（最高优先级）
             PickTarget best = null; float bestScore = float.MaxValue;
             for (int i = 0; i < PickTarget.All.Count; i++)
             {
                 var t = PickTarget.All[i];
                 if (!t.interactable) continue;
-                var p = t.transform.position;
-                float near = Vector3.Distance(h.pinchPoint, p);
-                if (near <= t.radius + 0.04f) { float sc = near - 10f; if (sc < bestScore) { bestScore = sc; best = t; } continue; }
-                if (!h.hasRay) continue;
-                var to = p - h.ray.origin; float dist = to.magnitude; if (dist < 0.05f) continue;
-                float ang = Vector3.Angle(h.ray.direction, to);
-                float cone = Mathf.Max(coneDeg, Mathf.Atan2(t.radius, dist) * Mathf.Rad2Deg * 1.2f) + (t == ht.cur ? hysteresisDeg : 0f);
-                if (ang <= cone && ang < bestScore) { bestScore = ang; best = t; }
+                float near = Vector3.Distance(h.pinchPoint, t.transform.position);
+                if (near <= t.radius + 0.075f && near < bestScore) { bestScore = near; best = t; }
             }
-            ht.cur = best;
-            if (best) { best.hovered = true; ht.recent = best; ht.recentT = now; }
+
+            // 2) 眼动优先锁定（看哪个按钮/选关星就套上准星，手轻捏即点）
+            bool hasGaze = best == null && runner && runner.InXR && runner.pico && runner.pico.EyeTracked;
+            if (hasGaze)
+            {
+                Ray gaze = runner.pico.Gaze;
+                bestScore = float.MaxValue;
+                for (int i = 0; i < PickTarget.All.Count; i++)
+                {
+                    var t = PickTarget.All[i];
+                    if (!t.interactable) continue;
+                    var to = t.transform.position - gaze.origin; float dist = to.magnitude; if (dist < 0.05f) continue;
+                    float ang = Vector3.Angle(gaze.direction, to);
+                    float angRad = Mathf.Atan2(t.radius, dist) * Mathf.Rad2Deg;
+                    float gOff = Mathf.Max(0f, ang - angRad);
+                    float limit = 5.5f + (t == ht.cur ? 1.2f : 0f);
+                    float score = gOff - (t == ht.cur ? 0.9f : 0f);
+                    if (gOff <= limit && score < bestScore) { bestScore = score; best = t; }
+                }
+            }
+
+            // 3) 眼动未注视任何按钮时，回退到零视差手部射线
+            if (best == null && h.hasRay)
+            {
+                bestScore = float.MaxValue;
+                for (int i = 0; i < PickTarget.All.Count; i++)
+                {
+                    var t = PickTarget.All[i];
+                    if (!t.interactable) continue;
+                    var to = t.transform.position - h.ray.origin; float dist = to.magnitude; if (dist < 0.05f) continue;
+                    float ang = Vector3.Angle(h.ray.direction, to);
+                    float angRad = Mathf.Atan2(t.radius, dist) * Mathf.Rad2Deg;
+                    float cone = Mathf.Max(coneDeg, angRad * 1.4f) + (t == ht.cur ? hysteresisDeg : 0f);
+                    float score = Mathf.Max(0f, ang - angRad) - (t == ht.cur ? hysteresisDeg * 0.6f : 0f);
+                    if (ang <= cone && score < bestScore) { bestScore = score; best = t; }
+                }
+            }
+            if (best != ht.cur)
+            {
+                // 如果刚刚还稳稳锁着旧目标，先记入 recent 供捏合瞬间防抖回溯
+                if (ht.cur && ht.cur.interactable) { ht.recent = ht.cur; ht.recentT = now; }
+                ht.cur = best;
+                ht.curSince = now;
+            }
+            if (best) { best.hovered = true; if (now - ht.curSince >= 0.08f) { ht.recent = best; ht.recentT = now; } }
 
             bool down = h.pinch && !ht.wasPinch;
             ht.wasPinch = h.pinch;
             if (!down) return;
-            var target = best ? best : (ht.recent && now - ht.recentT <= lookback ? ht.recent : null);
+            // 若在捏合前 < 80 ms 才刚切到旁边新按钮（大概率是捏合动作带偏），优先回溯前一个稳稳瞄住的 recent 目标
+            PickTarget target = best;
+            if ((!best || now - ht.curSince < 0.08f) && ht.recent && ht.recent.isActiveAndEnabled && ht.recent.interactable && now - ht.recentT <= lookback)
+                target = ht.recent;
             if (!target) return;
             if (target.holdSeconds > 0f) { ht.holding = target; target.holdT = 0; return; }
             Fire(target);

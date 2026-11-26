@@ -28,6 +28,7 @@ namespace Starstrung
 
         void Awake()
         {
+            if (badgeMat) badgeMat.enableInstancing = true;
             mpb = new MaterialPropertyBlock();
             // 双子之间的细线（最多 8 对，循环用）
             for (int i = 0; i < 8; i++)

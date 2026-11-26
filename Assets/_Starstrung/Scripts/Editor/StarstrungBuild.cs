@@ -23,7 +23,14 @@ namespace Starstrung.EditorTools
         static void Pico()
         {
             var c = AssetDatabase.LoadAssetAtPath<ByteDance.PICO.XR.PXR_ProjectSetting>("Assets/Resources/PXR_ProjectSetting.asset");
-            if (c) { c.handTracking = true; c.eyeTracking = true; c.videoSeeThrough = true; EditorUtility.SetDirty(c); }
+            if (c)
+            {
+                c.handTracking = true;
+                c.eyeTracking = true;
+                c.videoSeeThrough = true;
+                c.handTrackingSupportType = ByteDance.PICO.XR.HandTrackingSupport.ControllersAndHands;
+                EditorUtility.SetDirty(c);
+            }
             AssetDatabase.SaveAssets();
         }
 
@@ -69,12 +76,20 @@ namespace Starstrung.EditorTools
             PlayerSettings.Android.applicationEntry = AndroidApplicationEntry.Activity;      // PICO SDK 校验：不能用 GameActivity
             EditorUserBuildSettings.androidBuildSystem = AndroidBuildSystem.Gradle;
             EditorUserBuildSettings.buildAppBundle = false;
+            EditorUserBuildSettings.exportAsGoogleAndroidProject = false;
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene("Assets/_Starstrung/Scenes/Main.unity", true) };
             string ks = Path.GetFullPath("Keystore/starstrung.keystore"), pw = "Keystore/keystore_pass.txt";
-            if (!File.Exists(ks) || !File.Exists(pw)) throw new Exception("找不到 Keystore/starstrung.keystore（不入库，见 README）");
-            string pass = File.ReadAllText(pw).Trim();
-            PlayerSettings.Android.useCustomKeystore = true; PlayerSettings.Android.keystoreName = ks; PlayerSettings.Android.keystorePass = pass;
-            PlayerSettings.Android.keyaliasName = "starstrung"; PlayerSettings.Android.keyaliasPass = pass;
+            if (File.Exists(ks) && File.Exists(pw))
+            {
+                string pass = File.ReadAllText(pw).Trim();
+                PlayerSettings.Android.useCustomKeystore = true; PlayerSettings.Android.keystoreName = ks; PlayerSettings.Android.keystorePass = pass;
+                PlayerSettings.Android.keyaliasName = "starstrung"; PlayerSettings.Android.keyaliasPass = pass;
+            }
+            else
+            {
+                Debug.LogWarning("[摘星] 未找到 Keystore/starstrung.keystore，回退为 Android 默认 debug 签名");
+                PlayerSettings.Android.useCustomKeystore = false;
+            }
             // Gradle 导出目录里的旧资源分片会混进新包，以前在别的项目里造成过启动卡死
             foreach (var d in new[] { "Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/assets", "Library/Bee/Android/Prj/Mono2x/Gradle/unityLibrary/src/main/assets" })
                 if (Directory.Exists(d)) Directory.Delete(d, true);

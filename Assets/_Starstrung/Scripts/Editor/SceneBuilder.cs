@@ -1,6 +1,7 @@
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.XR;
 using UnityEngine.Rendering.Universal;
 
@@ -21,7 +22,13 @@ namespace Starstrung.EditorTools
             cam.nearClipPlane = 0.02f; cam.farClipPlane = 60f; cam.fieldOfView = 70f;
             cam.clearFlags = CameraClearFlags.SolidColor; cam.backgroundColor = new Color(0.02f, 0.025f, 0.05f, 1f);
             camGo.AddComponent<AudioListener>();
-            camGo.AddComponent<TrackedPoseDriver>();
+            var tpd = camGo.AddComponent<TrackedPoseDriver>();
+            tpd.positionInput = new InputActionProperty(new InputAction("Position", InputActionType.Value, "<XRHMD>/centerEyePosition"));
+            tpd.rotationInput = new InputActionProperty(new InputAction("Rotation", InputActionType.Value, "<XRHMD>/centerEyeRotation"));
+            tpd.trackingStateInput = new InputActionProperty(new InputAction("Tracking State", InputActionType.Value, "<XRHMD>/trackingState"));
+            tpd.trackingType = TrackedPoseDriver.TrackingType.RotationAndPosition;
+            tpd.updateType = TrackedPoseDriver.UpdateType.UpdateAndBeforeRender;
+            tpd.ignoreTrackingState = false;
             var desk = camGo.AddComponent<DeskSim>(); desk.cam = cam;
 
             // 逻辑原点
@@ -37,7 +44,7 @@ namespace Starstrung.EditorTools
             var gf = gems.AddComponent<GemField>(); gf.runner = runner;
             // 特殊星标识（双子双环 + 连线、星爆尖刺、停摆刻度环）：一次实例化画完
             var badges = gems.AddComponent<StarBadges>(); badges.gems = gf;
-            badges.badgeMat = MatAt("Assets/_Starstrung/Resources/UI/StarBadge.mat", "Starstrung/StarBadge", m => m.SetFloat("_Intensity", 1.5f));
+            badges.badgeMat = MatAt("Assets/_Starstrung/Resources/UI/StarBadge.mat", "Starstrung/StarBadge", m => { m.SetFloat("_Intensity", 1.5f); m.enableInstancing = true; });
             gf.mesh = MeshGen.UVSphere(32, 20, "Assets/_Starstrung/Meshes/Sphere32.asset");   // 宝石星最大约 7 cm，32×20 看不出棱角；同屏上百颗，面数省一半
             gf.material = AssetDatabase.LoadAssetAtPath<Material>("Assets/_Starstrung/Materials/GemStar.mat");
 
@@ -106,6 +113,43 @@ namespace Starstrung.EditorTools
 
             EditorSceneManager.SaveScene(scene, "Assets/_Starstrung/Scenes/Main.unity");
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene("Assets/_Starstrung/Scenes/Main.unity", true) };
+        }
+
+        /// <summary>无损修复现有 Main.unity 的 6DoF TrackedPoseDriver 绑定（不覆盖任何已调好的材质与资产），并跑一轮逻辑自检。</summary>
+        [MenuItem("Starstrung/修复主场景 6DoF 追踪")]
+        public static void FixMainSceneTracking()
+        {
+            var scene = EditorSceneManager.OpenScene("Assets/_Starstrung/Scenes/Main.unity", OpenSceneMode.Single);
+            var cam = Camera.main ?? Object.FindAnyObjectByType<Camera>();
+            if (!cam) throw new System.Exception("[摘星] Main.unity 中未找到 Main Camera");
+
+            var tpd = cam.GetComponent<TrackedPoseDriver>();
+            if (!tpd) tpd = cam.gameObject.AddComponent<TrackedPoseDriver>();
+            tpd.positionInput = new InputActionProperty(new InputAction("Position", InputActionType.Value, "<XRHMD>/centerEyePosition"));
+            tpd.rotationInput = new InputActionProperty(new InputAction("Rotation", InputActionType.Value, "<XRHMD>/centerEyeRotation"));
+            tpd.trackingStateInput = new InputActionProperty(new InputAction("Tracking State", InputActionType.Value, "<XRHMD>/trackingState"));
+            tpd.trackingType = TrackedPoseDriver.TrackingType.RotationAndPosition;
+            tpd.updateType = TrackedPoseDriver.UpdateType.UpdateAndBeforeRender;
+            tpd.ignoreTrackingState = false;
+            EditorUtility.SetDirty(tpd);
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+
+            // 同步更新 PXR_ProjectSetting 确保持久化开启手势、眼动与视频透视
+            var pxr = AssetDatabase.LoadAssetAtPath<ByteDance.PICO.XR.PXR_ProjectSetting>("Assets/Resources/PXR_ProjectSetting.asset");
+            if (pxr)
+            {
+                pxr.handTracking = true;
+                pxr.eyeTracking = true;
+                pxr.videoSeeThrough = true;
+                pxr.handTrackingSupportType = ByteDance.PICO.XR.HandTrackingSupport.ControllersAndHands;
+                EditorUtility.SetDirty(pxr);
+                AssetDatabase.SaveAssets();
+            }
+
+            string testReport = Starstrung.Logic.SelfTest.RunAll();
+            Debug.Log("[摘星] Main.unity 6DoF 追踪修复完成；SelfTest 结果：\n" + testReport);
         }
 
         static Material MatAt(string path, string shader, System.Action<Material> setup = null)

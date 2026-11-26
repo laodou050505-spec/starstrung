@@ -13,13 +13,13 @@ MonoBehaviour:
   m_Name: PXR_ProjectSetting
   m_EditorClassIdentifier: ByteDance.PICO.XR::ByteDance.PICO.XR.PXR_ProjectSetting
   useContentProtect: 0
-  handTracking: 0
+  handTracking: 1
   adaptiveHand: 0
   highFrequencyHand: 0
   openMRC: 1
   faceTracking: 0
   lipsyncTracking: 0
-  eyeTracking: 0
+  eyeTracking: 1
   eyetrackingCalibration: 0
   enableETFR: 0
   foveationLevel: -1
@@ -29,7 +29,7 @@ MonoBehaviour:
   bodyTracking: 0
   adaptiveResolution: 0
   stageMode: 0
-  videoSeeThrough: 0
+  videoSeeThrough: 1
   spatialAnchor: 0
   sceneCapture: 0
   sharedAnchor: 0
@@ -53,7 +53,7 @@ MonoBehaviour:
   recommendMSAA: 0
   validationFFREnabled: 0
   validationETFREnabled: 0
-  portalInited: 1
+  portalInited: 0
   isDataCollectionDisabled: 0
   portalFirstSelected: 0
   isSpatialAdapter: 0

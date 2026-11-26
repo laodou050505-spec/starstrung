@@ -29,13 +29,17 @@ namespace Starstrung
         HandJointLocations locs = new() { jointLocations = new HandJointLocation[(int)HandJoint.JointMax] };
         EyeTrackingData eye = new() { eyeDatas = new PerEyeData[(int)PerEyeUsage.EyeCount] };
         HandAimState aim;
-        bool eyeStarted; float eyeNextTry;
-        readonly bool[] pinch = new bool[2], stale = new bool[2];
-        readonly float[] pinchT0 = new float[2], anchorT = new float[2], lostT = { -9f, -9f }, frozenFor = new float[2], tipDist = { 9f, 9f };
-        readonly Vector3[] anchorP = new Vector3[2], freezeSig = new Vector3[2];
+        bool eyeStarted; float eyeNextTry; float lastEyeOkT = -9f;
+        readonly bool[] pinch = new bool[2], stale = new bool[2], preLock = new bool[2];
+        readonly float[] pinchT0 = new float[2], anchorT = new float[2], lostT = { -9f, -9f }, frozenFor = new float[2], tipDist = { 9f, 9f }, prevDist = { 9f, 9f };
+        readonly Vector3[] anchorP = new Vector3[2], freezeSig = new Vector3[2], smoothRayDir = new Vector3[2], lockPalm = new Vector3[2];
+        readonly string[] raySource = { "-", "-" };
         HandState lastL, lastR;
         Vector3 gazeDir;
         bool diagWasL, diagWasR; float diagT;
+
+        /// <summary>当前指定手是否处于“预捏合/预松手”稳定锁定状态（供指尖星光提前渐金反馈）。</summary>
+        public bool IsPreLocked(int side) => side >= 0 && side <= 1 && preLock[side];
 
         void OnDisable()
         {
@@ -67,24 +71,35 @@ namespace Starstrung
             var pj = locs.jointLocations[(int)HandJoint.JointPalm].pose;
             var q = new Quaternion(pj.Orientation.x, pj.Orientation.y, -pj.Orientation.z, -pj.Orientation.w);
             float d = Vector3.Distance(thumb, tips[0]);
+            float prevD = prevDist[side] > 1f ? d : prevDist[side];
+            prevDist[side] = d;
             bool aimOk = PXR_HandTracking.GetAimState(type, ref aim);
-            bool sys = aimOk && ((ulong)aim.aimStatus & (ulong)HandAimStatus.AimIndexPinching) != 0;
+            ulong aimFlags = aimOk ? (ulong)aim.aimStatus : 0UL;
+            // 仅在指尖确实靠近（< 3.2 cm）时采信系统食指捏合标志，避免松手粘死
+            bool sysPinch = aimOk && d < 0.032f && (
+                (aimFlags & (ulong)HandAimStatus.AimIndexPinching) != 0 ||
+                aim.touchStrengthRay >= 0.88f);
             tipDist[side] = d;
-            // 捏合：真正的捏是“OK 手势”，中指 / 无名指 / 小指至少一根没握死；已经捏住后不再要求（拖动时手指一收不会断）
+
+            // 捏合判定（真机精准黄金阈值：自然张手 4.4~8.9 cm，真捏 0.6~2.6 cm）：
+            // - 触发：d <= 2.3 cm 无条件触发；或 d < pinchOn (2.8 cm) 且非紧握拳头；或系统确认捏合（d < 3.2 cm）
+            // - 松开：d > pinchOff (4.2 cm) 清脆释放，绝不粘连
             int others = 0; for (int i = 1; i < 4; i++) if (Ratio(i) > T.otherFingerOpen) others++;
-            bool start = d < T.pinchOn && others >= 1;
+            bool start = sysPinch || d < 0.023f || (d < T.pinchOn && others >= 1);
             bool was = pinch[side];
-            pinch[side] = (sys && d < T.pinchOff) || (was ? d < T.pinchOff : start);
+            pinch[side] = was ? (d < T.pinchOff) : start;
+
             var pp = (thumb + tips[0]) * 0.5f;
             if (pinch[side] && !was) { pinchT0[side] = Time.time; anchorP[side] = pp; anchorT[side] = Time.time; }
             if (pinch[side])
             {
-                if ((pp - anchorP[side]).sqrMagnitude > 0.025f * 0.025f) { anchorP[side] = pp; anchorT[side] = Time.time; }
-                // 捏着很久、手又几乎没动：多半是松手后手指自然蜷着，当作已松开
-                if (Time.time - pinchT0[side] > T.staleAfter && Time.time - anchorT[side] > 1.5f) { pinch[side] = false; stale[side] = true; }
+                if ((pp - anchorP[side]).sqrMagnitude > 0.02f * 0.02f) { anchorP[side] = pp; anchorT[side] = Time.time; }
+                if (d > 0.026f && Time.time - pinchT0[side] > T.staleAfter && Time.time - anchorT[side] > 4f)
+                {
+                    pinch[side] = false;
+                    stale[side] = true;
+                }
             }
-            float maxOther = 0f; for (int i = 1; i < 4; i++) maxOther = Mathf.Max(maxOther, Ratio(i));
-            if (pinch[side] && was && maxOther < 1.15f && Time.time - anchorT[side] > 0.5f) { pinch[side] = false; stale[side] = true; }   // 捏变成了握拳
             if (stale[side]) { if (d > T.pinchOff) stale[side] = false; else pinch[side] = false; }
 
             var palm = (wrist + prox[0] + prox[1] + prox[3]) * 0.25f;
@@ -93,19 +108,61 @@ namespace Starstrung
                 tracked = true, pinch = pinch[side], pinchPoint = pp, indexTip = tips[0],
                 palm = palm, palmNormal = WorldRot(q) * Vector3.down, curl = curl / 4f,
             };
-            // 手掌射线：肩膀（头部下方、按头的朝向偏到这一侧）→ 手掌
-            var head = cam.transform;
-            var flatR = Vector3.ProjectOnPlane(head.right, Vector3.up).normalized;
-            var shoulder = head.position + flatR * (side == 1 ? T.shoulderSide : -T.shoulderSide) - Vector3.up * T.shoulderDown;
-            var dir = palm - shoulder;
-            if (dir.sqrMagnitude > 0.01f * 0.01f)
+
+            // 双向预动作稳像锁（Pre-Pinch Lock + Pre-Release Lock）：
+            // - 张手准备捏下去时（d 收缩进入 4.4 cm 内且手掌未大幅移动）：冻结射线防捏合瞬间手指下沉跑偏；
+            // - 捏着准备松手放星时（d 扩张超过 2.6 cm 且手掌未大幅移动）：冻结射线防松手瞬间手腕微抖插偏相邻缝！
+            bool closingForPinch = !pinch[side] && d < 0.044f && (d < prevD - 0.0004f || preLock[side]);
+            bool openingForRelease = pinch[side] && d > 0.026f && (d > prevD + 0.0004f || preLock[side]);
+            bool wantLock = closingForPinch || openingForRelease;
+            if (wantLock)
             {
-                // 手放低时射线往上抬（舒适：远处的星在眼睛高度，不抬也能指到）
-                float drop = shoulder.y - palm.y;
-                float lift = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(T.liftFrom, T.liftFull, drop)) * T.lowHandLiftDeg;
-                var axis = Vector3.Cross(dir, Vector3.up);
-                if (lift > 0.01f && axis.sqrMagnitude > 1e-6f) dir = Quaternion.AngleAxis(lift, axis.normalized) * dir;   // 已在编辑器里数值验证：正角度 = 往上抬
-                h.ray = new Ray(palm, dir.normalized); h.hasRay = true;
+                if (!preLock[side]) { preLock[side] = true; lockPalm[side] = palm; }
+                else if (Vector3.Distance(palm, lockPalm[side]) > 0.055f) preLock[side] = false; // 手大幅移动，主动换目标则立刻解锁
+            }
+            else
+            {
+                preLock[side] = false;
+            }
+
+            // 严格零视差“眼心 → 指尖”瞄准射线：
+            // 锚点固定在双眼正中心 cam.transform.position（0 cm 上下/左右偏移），
+            // 在视野中把指尖星光点盖向哪颗星或按钮，射线就分毫不差穿过该目标中心。
+            var head = cam.transform;
+            var anchor = head.position;
+            var toPinch = pp - anchor;
+            float distFromAnchor = toPinch.magnitude;
+            if (distFromAnchor > 0.10f)
+            {
+                var rawDir = toPinch / distFromAnchor;
+                if (Vector3.Angle(rawDir, head.forward) <= 85f)
+                {
+                    if (smoothRayDir[side] == Vector3.zero)
+                    {
+                        smoothRayDir[side] = rawDir;
+                    }
+                    else if (preLock[side])
+                    {
+                        // 预捏合/预松手瞬间极强阻尼锁定，彻底杜绝手指合拢/松开抖动把准星带歪到旁边星
+                        float rkLock = 1f - Mathf.Exp(-Time.unscaledDeltaTime / 0.35f);
+                        smoothRayDir[side] = Vector3.Slerp(smoothRayDir[side], rawDir, rkLock).normalized;
+                    }
+                    else
+                    {
+                        // 常规瞄准：速度自适应轻滤波（慢瞄稳、快移零滞后）
+                        float angDelta = Vector3.Angle(smoothRayDir[side], rawDir);
+                        float tau = Mathf.Lerp(0.032f, 0.006f, Mathf.Clamp01(angDelta / 7f));
+                        float rk = 1f - Mathf.Exp(-Time.unscaledDeltaTime / tau);
+                        smoothRayDir[side] = Vector3.Slerp(smoothRayDir[side], rawDir, rk).normalized;
+                    }
+                    h.ray = new Ray(pp, smoothRayDir[side]);
+                    h.hasRay = true;
+                    raySource[side] = preLock[side] ? "eyeL" : "eye";
+                }
+                else
+                {
+                    raySource[side] = "out";
+                }
             }
             return true;
         }
@@ -122,14 +179,20 @@ namespace Starstrung
                 Debug.Log("[SS-IN] eye start " + (eyeStarted ? "ok" : "failed, retry later"));
                 if (!eyeStarted) return false;
             }
+            for (int i = 0; i < eye.eyeDatas.Length; i++)
+                eye.eyeDatas[i].SetVersion(PXR_MotionTracking.PXR_EYE_TRACKING_API_VERSION);
             var info = new EyeTrackingDataGetInfo { displayTime = 0, flags = EyeTrackingDataGetFlags.PXR_EYE_POSITION | EyeTrackingDataGetFlags.PXR_EYE_ORIENTATION };
             if (PXR_MotionTracking.GetEyeTrackingData(ref info, ref eye) != 0 || eye.eyeDatas == null) return false;
             var cmb = eye.eyeDatas[(int)PerEyeUsage.Combined];
             if (cmb.isPoseValid == 0) return false;
-            if (cmb.isOpennessValid != 0 && cmb.openness < 0.2f) return false; // 闭眼 / 眨眼
-            var o = new Vector3(cmb.pose.position.x, cmb.pose.position.y, -cmb.pose.position.z);
+            if (cmb.isOpennessValid != 0 && cmb.openness < 0.22f) return false; // 闭眼 / 眨眼
             var qq = new Quaternion(cmb.pose.orientation.x, cmb.pose.orientation.y, -cmb.pose.orientation.z, -cmb.pose.orientation.w);
-            ray = new Ray(World(o), (WorldRot(qq) * Vector3.forward).normalized);
+            var dir = (WorldRot(qq) * Vector3.forward).normalized;
+            if (dir.sqrMagnitude < 0.5f) return false;
+            // 生理合法性保护：人眼相对头朝向转角不超过 50°，过滤异常帧
+            if (Vector3.Angle(dir, cam.transform.forward) > 50f) return false;
+            // 与 PICO 官方 PXR_EyeGazeCursorDriver 保持一致：以渲染相机中心为视线原点，消除眼位偏移视差
+            ray = new Ray(cam.transform.position, dir);
             return true;
         }
 
@@ -137,24 +200,60 @@ namespace Starstrung
         {
             if (!Active) { Left = Right = default; return; }
             float now = Time.time;
-            bool hands = PXR_HandTracking.GetActiveInputDevice() == ActiveInputDevice.HandTrackingActive;
+            var dev = PXR_HandTracking.GetActiveInputDevice();
+            bool hands = dev != ActiveInputDevice.ControllerActive;
             if (hands && ReadHand(HandType.HandLeft, 0, out var nl)) { Left = lastL = nl; lostT[0] = now; }
             else if (now - lostT[0] < tuning.lostGrace) Left = lastL;
-            else { Left = default; pinch[0] = false; }
+            else { Left = default; pinch[0] = false; preLock[0] = false; prevDist[0] = 9f; smoothRayDir[0] = Vector3.zero; }
             if (hands && ReadHand(HandType.HandRight, 1, out var nr)) { Right = lastR = nr; lostT[1] = now; }
             else if (now - lostT[1] < tuning.lostGrace) Right = lastR;
-            else { Right = default; pinch[1] = false; }
-
-            Diag = $"L={(Left.tracked ? (Left.pinch ? "PINCH" : "open") : "lost")} d={tipDist[0] * 100:0.0}cm R={(Right.tracked ? (Right.pinch ? "PINCH" : "open") : "lost")} d={tipDist[1] * 100:0.0}cm eye={EyeTracked}";
-            if (Left.pinch != diagWasL || Right.pinch != diagWasR) { Debug.Log("[SS-IN] pinch-change " + Diag); diagWasL = Left.pinch; diagWasR = Right.pinch; }
-            if (now - diagT > 3f) { diagT = now; Debug.Log("[SS-IN] status " + Diag); }
+            else { Right = default; pinch[1] = false; preLock[1] = false; prevDist[1] = 9f; smoothRayDir[1] = Vector3.zero; }
 
             var t = cam.transform;
-            EyeTracked = ReadEye(out var e);
-            var target = EyeTracked ? e : new Ray(t.position, t.forward);
-            float k = 1f - Mathf.Exp(-Time.deltaTime / Mathf.Max(0.001f, tuning.gazeSmoothing));
-            gazeDir = gazeDir == Vector3.zero ? target.direction : Vector3.Slerp(gazeDir, target.direction, k);
-            Gaze = new Ray(target.origin, gazeDir.normalized);
+            bool gotEye = ReadEye(out var e);
+            if (gotEye)
+            {
+                lastEyeOkT = now;
+                EyeTracked = true;
+                // 任一只手处于预捏合/预松手稳像锁时，同步锁住眼动方向，防止捏下去那一刻下意识瞟别处切星
+                bool anyPreLock = preLock[0] || preLock[1];
+                if (gazeDir == Vector3.zero)
+                {
+                    gazeDir = e.direction;
+                }
+                else if (anyPreLock)
+                {
+                    float rkLock = 1f - Mathf.Exp(-Time.unscaledDeltaTime / 0.35f);
+                    gazeDir = Vector3.Slerp(gazeDir, e.direction, rkLock).normalized;
+                }
+                else
+                {
+                    // 速度自适应眼动滤波：盯住同一颗星极稳，眼跳切目标 12ms 秒跟
+                    float ang = Vector3.Angle(gazeDir, e.direction);
+                    float tau = Mathf.Lerp(Mathf.Max(0.015f, tuning.gazeSmoothing), 0.010f, Mathf.Clamp01(ang / 6f));
+                    float k = 1f - Mathf.Exp(-Time.unscaledDeltaTime / tau);
+                    gazeDir = Vector3.Slerp(gazeDir, e.direction, k).normalized;
+                }
+                Gaze = new Ray(t.position, gazeDir);
+            }
+            else if (now - lastEyeOkT < 0.22f && gazeDir != Vector3.zero)
+            {
+                // 眨眼 220 ms 宽限期：保持上一帧稳定注视方向不掉锁定
+                EyeTracked = true;
+                Gaze = new Ray(t.position, gazeDir);
+            }
+            else
+            {
+                EyeTracked = false;
+                float k = 1f - Mathf.Exp(-Time.unscaledDeltaTime / Mathf.Max(0.001f, tuning.gazeSmoothing));
+                gazeDir = gazeDir == Vector3.zero ? t.forward : Vector3.Slerp(gazeDir, t.forward, k).normalized;
+                Gaze = new Ray(t.position, gazeDir);
+            }
+
+            float eyeAng = Vector3.Angle(Gaze.direction, t.forward);
+            Diag = $"L={(Left.tracked ? (Left.pinch ? "PINCH" : "open") : "lost")}({raySource[0]}) d={tipDist[0] * 100:0.0}cm R={(Right.tracked ? (Right.pinch ? "PINCH" : "open") : "lost")}({raySource[1]}) d={tipDist[1] * 100:0.0}cm eye={EyeTracked}({eyeAng:0.0}d) dev={dev}";
+            if (Left.pinch != diagWasL || Right.pinch != diagWasR) { Debug.Log("[SS-IN] pinch-change " + Diag); diagWasL = Left.pinch; diagWasR = Right.pinch; }
+            if (now - diagT > 3f) { diagT = now; Debug.Log("[SS-IN] status " + Diag); }
         }
     }
 }

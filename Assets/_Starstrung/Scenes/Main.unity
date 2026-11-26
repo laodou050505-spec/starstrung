@@ -10691,11 +10691,19 @@ MonoBehaviour:
     m_Action:
       m_Name: Position
       m_Type: 0
-      m_ExpectedControlType: Vector3
-      m_Id: 33cbbcb3-0f3c-429d-8829-5e1ac5f4ab6e
+      m_ExpectedControlType: 
+      m_Id: 2f7cb175-3489-4b2f-84ec-421aa64b0682
       m_Processors: 
       m_Interactions: 
-      m_SingletonActionBindings: []
+      m_SingletonActionBindings:
+      - m_Name: 
+        m_Id: 751446fa-9b52-4517-9b37-d64fc63954f8
+        m_Path: <XRHMD>/centerEyePosition
+        m_Interactions: 
+        m_Processors: 
+        m_Groups: 
+        m_Action: Position
+        m_Flags: 0
       m_Flags: 0
     m_Reference: {fileID: 0}
   m_RotationInput:
@@ -10703,11 +10711,19 @@ MonoBehaviour:
     m_Action:
       m_Name: Rotation
       m_Type: 0
-      m_ExpectedControlType: Quaternion
-      m_Id: f3709b9e-78e9-4c3d-bd1f-b4a8e503b5af
+      m_ExpectedControlType: 
+      m_Id: 465602ec-0a74-4468-9837-95b28a126cf1
       m_Processors: 
       m_Interactions: 
-      m_SingletonActionBindings: []
+      m_SingletonActionBindings:
+      - m_Name: 
+        m_Id: 83a93400-f294-41cb-8d04-dad9907b710a
+        m_Path: <XRHMD>/centerEyeRotation
+        m_Interactions: 
+        m_Processors: 
+        m_Groups: 
+        m_Action: Rotation
+        m_Flags: 0
       m_Flags: 0
     m_Reference: {fileID: 0}
   m_TrackingStateInput:
@@ -10715,11 +10731,19 @@ MonoBehaviour:
     m_Action:
       m_Name: Tracking State
       m_Type: 0
-      m_ExpectedControlType: Integer
-      m_Id: 52a195fb-4091-4d50-8a90-57c9939d3572
+      m_ExpectedControlType: 
+      m_Id: 8fab7965-c30c-4f4c-8bd8-411e92665492
       m_Processors: 
       m_Interactions: 
-      m_SingletonActionBindings: []
+      m_SingletonActionBindings:
+      - m_Name: 
+        m_Id: 1079d019-c06d-4cd9-9467-3154c8c3a20d
+        m_Path: <XRHMD>/trackingState
+        m_Interactions: 
+        m_Processors: 
+        m_Groups: 
+        m_Action: Tracking State
+        m_Flags: 0
       m_Flags: 0
     m_Reference: {fileID: 0}
   m_PositionAction:
